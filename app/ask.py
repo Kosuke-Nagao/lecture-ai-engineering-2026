@@ -54,7 +54,7 @@ def main() -> None:
     client = genai.Client(api_key=get_api_key())
     chat = client.chats.create(
         model=MODEL,
-        config={"temperature": 0.0},
+        config={"temperature": 0.8, "seed": 12345},
     )
 
     question = args.question
