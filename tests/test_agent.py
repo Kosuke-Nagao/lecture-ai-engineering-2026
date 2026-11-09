@@ -8,6 +8,8 @@ TestModel は実際のLLMを呼ばない偽モデルで、登録されたツー�
 from pydantic_ai import DeferredToolRequests
 from pydantic_ai.messages import ToolCallPart, ToolReturnPart
 from pydantic_ai.models.test import TestModel
+from pydantic_ai import DeferredToolRequests ##追加
+from app import tools ##追加
 
 from app.agent import agent
 
@@ -19,7 +21,7 @@ def _parts(result, kind):
 
 
 def test_base_tools_are_registered_and_called():
-    model = TestModel()
+    model = TestModel(call_tools=sorted(BASE_TOOLS))
     with agent.override(model=model):
         result = agent.run_sync("LoRAとは？")
 
@@ -40,3 +42,35 @@ def test_glossary_result_reaches_the_model():
         result = agent.run_sync("RAGとは？")
     returns = _parts(result, ToolReturnPart)
     assert returns and returns[0].tool_name == "search_glossary"
+
+
+## 追加
+def test_save_log_is_deferred_until_approved(tmp_path, monkeypatch):
+    # 学習記録を保存するツールを呼ぶが、承認待ちになることを確認する
+    log_dir = tmp_path / "learning_log"
+    monkeypatch.setattr(tools, "LEARNING_LOG_DIR", log_dir)
+
+    with agent.override(model=TestModel(call_tools=["save_learning_log"])):
+        pending = agent.run_sync("学習記録を保存してください。") 
+
+    assert isinstance(pending.output, DeferredToolRequests)
+    assert len(pending.output.approvals) == 1
+
+    log_path = log_dir / "learning_log.md"
+    assert not log_path.exists()
+
+    approvals = {
+        call.tool_call_id: True
+        for call in pending.output.approvals
+    }
+    deferred_results = pending.output.build_results(approvals=approvals)
+
+    with agent.override(model=TestModel(call_tools=[])):
+        completed = agent.run_sync(
+            message_history=pending.all_messages(),
+            deferred_tool_results=deferred_results,
+        )
+
+    assert log_path.exists()
+    expected_entry = pending.output.approvals[0].args["entry"]
+    assert log_path.read_text(encoding="utf-8").strip() == expected_entry
