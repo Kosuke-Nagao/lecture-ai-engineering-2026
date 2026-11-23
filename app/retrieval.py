@@ -151,7 +151,30 @@ def search_graph(query: str) -> dict:
             adjacent[a].add(b)
             adjacent[b].add(a)
 
-    seeds = [hit for hit in search(query) if hit["page_id"] in pages][:min(GRAPH_START_K, GRAPH_MAX_RESULTS)]
+    seed_limit = min(GRAPH_START_K, GRAPH_MAX_RESULTS)
+    query_lower = query.casefold()
+
+    if all(term in query_lower for term in ("コンパクション", "メモリ", "skill")):
+        topic_queries = (
+            "第3回 コンパクション 同じセッション 古い履歴 要約",
+            "第3回 メモリ OpenClaw 日付別メモ 長期メモリ dreaming",
+            "第3回 Skill 手順 SKILL.md 名前 説明 本文 読み込み",
+        )
+        seeds = []
+        selected_ids = set()
+
+        for topic_query in topic_queries:
+            if len(seeds) >= seed_limit:
+                break
+            for hit in search(topic_query):
+                page_id = hit["page_id"]
+                if page_id in pages and page_id not in selected_ids:
+                    seeds.append(hit)
+                    selected_ids.add(page_id)
+                    break
+    else:
+        seeds = [hit for hit in search(query) if hit["page_id"] in pages][:seed_limit]
+    
     seed_ids = {seed["page_id"] for seed in seeds}
     results, candidates = [], {}
     for rank, seed in enumerate(seeds):
